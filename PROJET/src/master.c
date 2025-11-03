@@ -17,7 +17,12 @@
 
 // on peut ici définir une structure stockant tout ce dont le master
 // a besoin
-
+typedef struct {
+    int *sem;       // identifiant du sémaphore de précédence
+    int maxPrime;      // plus grand nombre premier trouvé
+    int count;      // nombre de nombres premiers trouvés
+    int maxSent;   // plus grand nombre envoyé aux workers
+} masterData;
 
 /************************************************************************
  * Usage et analyse des arguments passés en ligne de commande
@@ -31,7 +36,6 @@ static void usage(const char *exeName, const char *message)
     exit(EXIT_FAILURE);
 }
 
-
 /************************************************************************
  * boucle principale de communication avec le client
  ************************************************************************/
@@ -39,6 +43,8 @@ void loop(/* paramètres */)
 {
     // boucle infinie :
     // - ouverture des tubes (cf. rq client.c)
+    int ret = mkfifo("master_to_client", 0644);
+    assert(ret == 0);
     // - attente d'un ordre du client (via le tube nommé)
     // - si ORDER_STOP
     //       . envoyer ordre de fin au premier worker et attendre sa fin
@@ -64,6 +70,7 @@ void loop(/* paramètres */)
     //
     // il est important d'ouvrir et fermer les tubes nommés à chaque itération
     // voyez-vous pourquoi ?
+
 }
 
 
