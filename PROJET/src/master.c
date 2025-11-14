@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "myassert.h"
 
@@ -46,6 +48,10 @@ void loop(/* paramètres */)
     int ret = mkfifo("master_to_client", 0644);
     assert(ret == 0);
     // - attente d'un ordre du client (via le tube nommé)
+    int order;
+    int fdFromClient = open("client_to_master", O_RDONLY);
+    assert(fdFromClient != -1);
+    char
     // - si ORDER_STOP
     //       . envoyer ordre de fin au premier worker et attendre sa fin
     //       . envoyer un accusé de réception au client
