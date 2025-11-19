@@ -104,7 +104,10 @@ int main(int argc, char * argv[])
         int ret = mkfifo("client_to_master", 0644);
         myassert(ret == 0, "mkfifo client_to_master failed");
         int fdClientToMaster = open("client_to_master", O_WRONLY);
-        ret = write(fdClientToMaster, , sizeof());
+        myassert(fdClientToMaster != -1, "open client_to_master failed");
+        ret = write(fdClientToMaster, ORDER_COMPUTE_PRIME, sizeof(ORDER_COMPUTE_PRIME));
+        myassert(ret == sizeof(ORDER_COMPUTE_PRIME), "write client_to_master failed");
+        
 
         // sinon
         //    - entrer en section critique :
