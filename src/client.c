@@ -108,6 +108,7 @@ int main(int argc, char * argv[])
         ret = write(fdClientToMaster, ORDER_COMPUTE_PRIME, sizeof(ORDER_COMPUTE_PRIME));
         myassert(ret == sizeof(ORDER_COMPUTE_PRIME), "write client_to_master failed");
         
+        
 
         // sinon
         //    - entrer en section critique :
