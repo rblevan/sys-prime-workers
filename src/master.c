@@ -5,11 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
+
 
 #include "myassert.h"
 
@@ -52,7 +54,7 @@ void loop(masterData *data)
     myassert(ret == 0, "mkfifo master_to_client failed");
     // - attente d'un ordre du client (via le tube nommé)
     int fdClientToMaster = open("master_to_client", O_RDONLY);
-
+    myassert(fdClientToMaster != -1, "open master_to_client failed");
     // - si ORDER_STOP
     ret = read(fdClientToMaster, , sizeof());
     if(ret == ORDER_STOP) {
