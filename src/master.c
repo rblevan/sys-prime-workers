@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <assert.h>
 
 #include "myassert.h"
 
@@ -39,16 +44,23 @@ static void usage(const char *exeName, const char *message)
 /************************************************************************
  * boucle principale de communication avec le client
  ************************************************************************/
-void loop(/* paramètres */)
+void loop(masterData *data)
 {
     // boucle infinie :
     // - ouverture des tubes (cf. rq client.c)
     int ret = mkfifo("master_to_client", 0644);
-    assert(ret == 0);
+    myassert(ret == 0, "mkfifo master_to_client failed");
     // - attente d'un ordre du client (via le tube nommé)
+    int fdClientToMaster = open("master_to_client", O_RDONLY);
+
     // - si ORDER_STOP
-    //       . envoyer ordre de fin au premier worker et attendre sa fin
-    //       . envoyer un accusé de réception au client
+    ret = read(fdClientToMaster, , sizeof());
+    if(ret == ORDER_STOP) {
+        //       . envoyer ordre de fin au premier worker et attendre sa fin
+        //       . envoyer un accusé de réception au client
+
+    }
+    
     // - si ORDER_COMPUTE_PRIME
     //       . récupérer le nombre N à tester provenant du client
     //       . construire le pipeline jusqu'au nombre N-1 (si non encore fait) :

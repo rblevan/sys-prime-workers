@@ -5,7 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <assert.h>
 
 #include "myassert.h"
 
@@ -95,20 +99,28 @@ int main(int argc, char * argv[])
     //      - ORDER_HIGHEST_PRIME
     //
     // si c'est ORDER_COMPUTE_PRIME_LOCAL
-    //    alors c'est un code complètement à part multi-thread
-    // sinon
-    //    - entrer en section critique :
-    //           . pour empêcher que 2 clients communiquent simultanément
-    //           . le mutex est déjà créé par le master
-    //    - ouvrir les tubes nommés (ils sont déjà créés par le master)
-    //           . les ouvertures sont bloquantes, il faut s'assurer que
-    //             le master ouvre les tubes dans le même ordre
-    //    - envoyer l'ordre et les données éventuelles au master
-    //    - attendre la réponse sur le second tube
-    //    - sortir de la section critique
-    //    - libérer les ressources (fermeture des tubes, ...)
-    //    - débloquer le master grâce à un second sémaphore (cf. ci-dessous)
-    // 
+    if(order == ORDER_COMPUTE_PRIME_LOCAL) {
+        //    alors c'est un code complètement à part multi-thread
+        int ret = mkfifo("client_to_master", 0644);
+        myassert(ret == 0, "mkfifo client_to_master failed");
+        int fdClientToMaster = open("client_to_master", O_WRONLY);
+        ret = write(fdClientToMaster, , sizeof());
+
+        // sinon
+        //    - entrer en section critique :
+        //           . pour empêcher que 2 clients communiquent simultanément
+        //           . le mutex est déjà créé par le master
+        //    - ouvrir les tubes nommés (ils sont déjà créés par le master)
+        //           . les ouvertures sont bloquantes, il faut s'assurer que
+        //             le master ouvre les tubes dans le même ordre
+        //    - envoyer l'ordre et les données éventuelles au master
+        //    - attendre la réponse sur le second tube
+        //    - sortir de la section critique
+        //    - libérer les ressources (fermeture des tubes, ...)
+        //    - débloquer le master grâce à un second sémaphore (cf. ci-dessous)
+        // 
+    }
+    
     // Une fois que le master a envoyé la réponse au client, il se bloque
     // sur un sémaphore ; le dernier point permet donc au master de continuer
     //
