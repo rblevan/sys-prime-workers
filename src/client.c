@@ -11,6 +11,11 @@
 #include <unistd.h>
 #include <assert.h>
 
+// ajout perso de biblio
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <string.h>
+
 #include "myassert.h"
 
 #include "master_client.h"
@@ -101,15 +106,44 @@ int main(int argc, char * argv[])
     // si c'est ORDER_COMPUTE_PRIME_LOCAL
     if(order == ORDER_COMPUTE_PRIME_LOCAL) {
         //    alors c'est un code complètement à part multi-thread
-        int ret = mkfifo("client_to_master", 0644);
-        myassert(ret == 0, "mkfifo client_to_master failed");
-        int fdClientToMaster = open("client_to_master", O_WRONLY);
-        myassert(fdClientToMaster != -1, "open client_to_master failed");
-        ret = write(fdClientToMaster, ORDER_COMPUTE_PRIME, sizeof(ORDER_COMPUTE_PRIME));
-        myassert(ret == sizeof(ORDER_COMPUTE_PRIME), "write client_to_master failed");
-        
-        
+        printf("Thread (pas encore fait)");
+    } else {
+        key_t key = ftok("master.c", 'S');
+        myassert(key != -1, "error: ftok for 'key' failed");
+        int semId = semget(key, 2, 0644 | IPC_CREAT);
+        myassert(semId != -1, "error: semget for 'semId' failed");
+        struct sembuf enterMutex = {0, -1, 0};
+        semop(semId, &enterMutex, 1);
 
+        int fdClientToMaster = open("client_to_master", O_WRONLY);
+        myassert(fdClientToMaster != -1, "error: open for 'client_to_master' failed");
+        int fdMasterToClient = open("master_to_client", O_RDONLY);
+        myassert(fdMasterToClient != -1, "error: open for 'master_to_client' failed");
+
+        ClientRequest req;
+        req.order = order;
+        req.number = number;
+
+        int ret = write(fdClientToMaster, &req, sizeof(ClientRequest));
+        myassert(ret == sizeof(ClientRequest), "error: write for 'fdClientToMaster' failed");
+
+        MasterResponse res;
+        ret = read(fdMasterToClient, &res, sizeof(MasterResponse));
+        myassert(ret == sizeof(MasterResponse), "error: read for 'fdMasterToClient' failed");
+
+        close(fdClientToMaster);
+        close(fdMasterToClient);
+
+        struct sembuf wakeMaster = {1, 1, 0};
+        semop(semId, &wakeMaster, 1);
+
+        struct sembuf leaveMutex = {0, 1, 0};
+        semop(semId, &leaveMutex, 1);
+    
+    }
+
+
+        
         // sinon
         //    - entrer en section critique :
         //           . pour empêcher que 2 clients communiquent simultanément
@@ -123,7 +157,7 @@ int main(int argc, char * argv[])
         //    - libérer les ressources (fermeture des tubes, ...)
         //    - débloquer le master grâce à un second sémaphore (cf. ci-dessous)
         // 
-    }
+    
     
     // Une fois que le master a envoyé la réponse au client, il se bloque
     // sur un sémaphore ; le dernier point permet donc au master de continuer

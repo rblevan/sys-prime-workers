@@ -6,6 +6,12 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+// ajout perso de biblio
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <string.h>
+
 #include "myassert.h"
 
 #include "master_worker.h"
@@ -14,8 +20,14 @@
  * Données persistantes d'un worker
  ************************************************************************/
 
-// on peut ici définir une structure stockant tout ce dont le worker
-// a besoin : le nombre premier dont il a la charge, ...
+typedef struct {
+    int myPrime; // nb premier géré par le WORKER
+    int fdIn; // tube par lequel on est entré
+    int fdToMaster; // tube par lequel on va au MASTER
+    int fdOut; // tube par lequel on va sortir
+    bool hasNext; // si il y a un WORKER suivant
+    pid_t pidNext; // pid du WORKER suivant
+} WorkerProps;
 
 
 /************************************************************************
@@ -33,12 +45,49 @@ static void usage(const char *exeName, const char *message)
     exit(EXIT_FAILURE);
 }
 
-static void parseArgs(int argc, char * argv[] /*, structure à remplir*/)
+static void parseArgs(int argc, char * argv[], WorkerProps *props)
 {
     if (argc != 4)
         usage(argv[0], "Nombre d'arguments incorrect");
 
-    // remplir la structure
+    props->myPrime = atoi(argv[1]);
+    props->fdIn = atoi(argv[2]);
+    props->fdToMaster = atoi(argv[3]);
+    props->fdOut = -1;
+    props->hasNext = false;
+    props->pidNext = -1;
+}
+
+void createNextWorker(WorkerProps *props, int n) {
+
+    int tube[2];
+    int ret = pipe(tube);
+    myassert(ret == 0, "error: pipe for 'ret' failed");
+
+    props->pidNext = fork();
+    myassert(props->pidNext != -1, "error: fork for 'props->pidNext' failed");
+
+    if (props->pidNext == 0) {
+        // enfant
+        close(tube[1]);
+
+        char strN[16];
+        char strFdIn[16];
+        char strFdToMaster[16];
+
+        sprintf(strN, "%d", n);
+        sprintf(strFdIn, "%d", tube[0]);
+        sprintf(strFdToMaster, "%d", props->fdToMaster);
+
+        execl("./worker", "worker", strN, strFdIn, strFdToMaster, NULL);
+        perror("error: execl for 'worker' failed");
+        exit(EXIT_FAILURE);
+    } else {
+        // parent
+        close(tube[0]);
+        props->fdOut = tube[1];
+        props->hasNext = true;
+    }
 }
 
 /************************************************************************

@@ -46,8 +46,7 @@ static void usage(const char *exeName, const char *message)
 /************************************************************************
  * boucle principale de communication avec le client
  ************************************************************************/
-void loop(masterData *data)
-{
+void loop(masterData *data) {
     bool running = true;
 
     mkfifo("client_to_master", 0644);
@@ -126,6 +125,7 @@ void loop(masterData *data)
             // voyez-vous pourquoi ?
             struct sembuf operation = {1, -1, 0};
             semop(data->semId, &operation, 1);
+    }
 }
 
 
