@@ -17,5 +17,26 @@
 // bref n'hésitez à mettre nombre de fonctions avec des noms explicites
 // pour masquer l'implémentation
 
+// Structure de données
+
+/**
+ *  Message envoyé du CLIENT vers le MASTER
+ */
+typedef struct
+{
+    int order; // Pour les codes ORDER_
+    int number; // Nb à tester (ignoré si COMPUTE)
+} ClientRequest;
+
+/**
+ *  Message envoyé du MASTER vers le CLIENT
+ */
+typedef struct {
+    int status; // si on a une erreur (on pose 0 = OK et -1 = erreur [optionnel])
+    int data; // la réponse du master : 1 (vrai) ou 0 (faux)
+              // compte pour HOW_MANY
+              // max pour HIGHEST
+              // 0 ou 1 pour accusé de STOP
+} MasterResponse;
 
 #endif
