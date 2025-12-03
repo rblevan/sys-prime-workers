@@ -21,12 +21,12 @@
  ************************************************************************/
 
 typedef struct {
-    int myPrime; // nb premier géré par le WORKER
-    int fdIn; // tube par lequel on est entré
+    int myPrime;    // nb premier géré par le WORKER
+    int fdIn;       // tube par lequel on est entré
     int fdToMaster; // tube par lequel on va au MASTER
-    int fdOut; // tube par lequel on va sortir
-    bool hasNext; // si il y a un WORKER suivant
-    pid_t pidNext; // pid du WORKER suivant
+    int fdOut;      // tube par lequel on va sortir
+    bool hasNext;   // si il y a un WORKER suivant
+    pid_t pidNext;  // pid du WORKER suivant
 } WorkerProps;
 
 
@@ -94,18 +94,64 @@ void createNextWorker(WorkerProps *props, int n) {
  * Boucle principale de traitement
  ************************************************************************/
 
-void loop(/* paramètres */)
+void loop(WorkerProps *props)
 {
+    int numberToTest;
+    bool running = true;
+
     // boucle infinie :
-    //    attendre l'arrivée d'un nombre à tester
-    //    si ordre d'arrêt
-    //       si il y a un worker suivant, transmettre l'ordre et attendre sa fin
-    //       sortir de la boucle
-    //    sinon c'est un nombre à tester, 4 possibilités :
-    //           - le nombre est premier
-    //           - le nombre n'est pas premier
-    //           - s'il y a un worker suivant lui transmettre le nombre
-    //           - s'il n'y a pas de worker suivant, le créer
+    while(running){
+
+        // attendre l'arrivée d'un nombre à tester
+        int ret = read(props->fdIn, &numberToTest, sizeof(numberToTest));
+        myassert(ret != -1, "error: read for 'props->fdIn' failed");
+        
+        // si ordre d'arrêt
+        if ((ret == 0) || (numberToTest == PIPELINE_STOP_ORDER)) {
+            running = false;
+        
+            // si il y a un worker suivant, transmettre l'ordre et attendre sa fin
+            if (props->hasNext) {
+                int stop_order = PIPELINE_STOP_ORDER;
+                write(props->fdOut, &stop_order, sizeof(stop_order));
+                close(props->fdOut); // fermeture du tube pour que le fils sorte de son read
+                waitpid(props->pidNext, NULL, 0);
+            }
+
+            // sortir de la boucle
+            break;
+        }
+
+        // sinon c'est un nombre à tester, 4 possibilités :
+        // - le nombre n'est pas premier (divisible par myPrime)
+        if (numberToTest % props->myPrime == 0) {
+            WorkerReport report;
+            report.number = numberToTest;
+            report.result = WORKER_MSG_NOT_PRIME;
+            ret = write(props->fdToMaster, &report, sizeof(WorkerReport));
+            myassert(ret == sizeof(WorkerReport), "error: write for 'props->fdToMaster' failed in not primary return");
+        }
+        else {
+            // Le nombre n'est pas divisible par myPrime, on le teste plus loin
+            // - s'il y a un worker suivant lui transmettre le nombre
+            if (props->hasNext){
+                ret = write(props->fdOut, &numberToTest, sizeof(numberToTest));
+                myassert(ret == sizeof(numberToTest), "error: write to next worker failed");
+            }
+            // - s'il n'y a pas de worker suivant, le créer
+            else {
+                // - le nombre est premier (car il n'a été divisé par aucun premier précédent)
+                WorkerReport report;
+                report.number = numberToTest;
+                report.result = WORKER_MSG_PRIME;
+                ret = write(props->fdToMaster, &report, sizeof(WorkerReport));
+                myassert(ret == sizeof(WorkerReport), "error: write for 'props->fdToMaster' failed in primary return");
+
+                // On crée le worker suivant pour ce nouveau nombre premier
+                createNextWorker(props, numberToTest);
+            }
+        }
+    }
 }
 
 /************************************************************************
@@ -114,15 +160,18 @@ void loop(/* paramètres */)
 
 int main(int argc, char * argv[])
 {
-    parseArgs(argc, argv /*, structure à remplir*/);
-    
+    WorkerProps props;
+    parseArgs(argc, argv, &props);
+
     // Si on est créé c'est qu'on est un nombre premier
     // Envoyer au master un message positif pour dire
     // que le nombre testé est bien premier
+    // Note : C'est le worker parent qui envoie ce message au master juste avant de créer ce worker.
 
-    loop(/* paramètres */);
+    loop(&props);
 
     // libérer les ressources : fermeture des files descriptors par exemple
+    close(props.fdIn);
 
     return EXIT_SUCCESS;
 }
