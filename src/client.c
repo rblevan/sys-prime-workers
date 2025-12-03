@@ -85,6 +85,34 @@ static int parseArgs(int argc, char * argv[], int *number)
     return order;
 }
 
+/************************************************************************
+ * Affichage de la réponse du master
+ ************************************************************************/
+
+static void displayResponse(int order, int number, const MasterResponse *res)
+{
+    if (res->status == 0) {
+        switch (order) {
+            case ORDER_STOP:
+                printf("Master en cours d'arrêt.\n");
+                break;
+            case ORDER_COMPUTE_PRIME:
+                printf("Le nombre %d est %s.\n", number, res->data == 1 ? "premier" : "non premier");
+                break;
+            case ORDER_HOW_MANY_PRIME:
+                printf("Nombre de nombres premiers trouvés : %d.\n", res->data);
+                break;
+            case ORDER_HIGHEST_PRIME:
+                printf("Plus grand nombre premier trouvé : %d.\n", res->data);
+                break;
+            default:
+                // Ne devrait pas arriver si parseArgs fait bien son travail
+                fprintf(stderr, "Réponse reçue pour une commande inconnue.\n");
+        }
+    } else {
+        fprintf(stderr, "Le master a retourné une erreur.\n");
+    }
+}
 
 /************************************************************************
  * Fonction principale
@@ -94,7 +122,6 @@ int main(int argc, char * argv[])
 {
     int number = 0;
     int order = parseArgs(argc, argv, &number);
-    printf("%d\n", order); // pour éviter le warning
 
     // order peut valoir 5 valeurs (cf. master_client.h) :
     //      - ORDER_COMPUTE_PRIME_LOCAL
@@ -106,11 +133,12 @@ int main(int argc, char * argv[])
     // si c'est ORDER_COMPUTE_PRIME_LOCAL
     if(order == ORDER_COMPUTE_PRIME_LOCAL) {
         //    alors c'est un code complètement à part multi-thread
+        // TODO Implémenter avec Threads
         printf("Thread (pas encore fait)");
     } else {
         key_t key = ftok("master.c", 'S');
         myassert(key != -1, "error: ftok for 'key' failed");
-        int semId = semget(key, 2, 0644 | IPC_CREAT);
+        int semId = semget(key, 2, 0);
         myassert(semId != -1, "error: semget for 'semId' failed");
         struct sembuf enterMutex = {0, -1, 0};
         semop(semId, &enterMutex, 1);
@@ -130,6 +158,9 @@ int main(int argc, char * argv[])
         MasterResponse res;
         ret = read(fdMasterToClient, &res, sizeof(MasterResponse));
         myassert(ret == sizeof(MasterResponse), "error: read for 'fdMasterToClient' failed");
+
+        // Affichage de la reponse du master
+        displayResponse(order, number, &res);
 
         close(fdClientToMaster);
         close(fdMasterToClient);

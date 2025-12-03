@@ -22,13 +22,16 @@
  * Données persistantes d'un master
  ************************************************************************/
 
-// on peut ici définir une structure stockant tout ce dont le master
-// a besoin
+// on peut ici définir une structure stockant tout ce dont le master a besoin
+
 typedef struct {
-    int semId;       // identifiant du sémaphore de précédence
-    int maxPrime;      // plus grand nombre premier trouvé
-    int count;      // nombre de nombres premiers trouvés
-    int maxSent;   // plus grand nombre envoyé aux workers
+    int semId;              // identifiant du groupe de sémaphores
+    int fdToWorker;         // fd d'écriture vers le premier worker
+    int fdFromWorkers;      // fd de lecture des rapports des workers
+    pid_t firstWorkerPid;   // PID du premier worker
+    int maxPrime;           // plus grand nombre premier trouvé
+    int count;              // nombre de nombres premiers trouvés
+    int maxSent;            // plus grand nombre envoyé aux worker
 } masterData;
 
 /************************************************************************
@@ -48,9 +51,6 @@ static void usage(const char *exeName, const char *message)
  ************************************************************************/
 void loop(masterData *data) {
     bool running = true;
-
-    mkfifo("client_to_master", 0644);
-    mkfifo("master_to_client", 0644);
 
     // boucle infinie :
     while(running) {
@@ -73,8 +73,14 @@ void loop(masterData *data) {
             switch (req.order) {
                 // - si ORDER_STOP
                 case ORDER_STOP:
+                printf("MASTER : Reçu demande d'arrêt\n");
+                {
+                    int stop_order = PIPELINE_STOP_ORDER;
+                    write(data->fdToWorker, &stop_order, sizeof(stop_order));
+                    waitpid(data->firstWorkerPid, NULL, 0);
                     running = false;
-                    res.data = -1;
+                    res.data = 1; // Accusé de réception
+                }
                     break;
                 
                 // - si ORDER_COMPUTE_PRIME_LOCAL
@@ -85,22 +91,63 @@ void loop(masterData *data) {
                 
                 // - si ORDER_COMPUTE_PRIME
                 case ORDER_COMPUTE_PRIME:
-                    printf("MASTER : Reçu demande de calcul pour %d\n", req.number);
-                    res.data = 0;
-                    break;    
-                //       . récupérer le nombre N à tester provenant du client
-                //       . construire le pipeline jusqu'au nombre N-1 (si non encore fait) :
-                //             il faut connaître le plus grand nombre (M) déjà enovoyé aux workers
-                //             on leur envoie tous les nombres entre M+1 et N-1
-                //             note : chaque envoie déclenche une réponse des workers
-                //       . envoyer N dans le pipeline
-                //       . récupérer la réponse
-                //       . la transmettre au client
+                printf("MASTER : Reçu demande de calcul pour %d\n", req.number);
+                {
+                    // On construit la pipeline jusqu'au nombre N-1 (si non encore fait) :
+                    for (int n = data->maxSent + 1; n <= req.number; n++) {
+                        write(data->fdToWorker, &n, sizeof(n));
+                        
+                        bool report_for_n_found = false;
+                        while (!report_for_n_found) {
+                            WorkerReport report;
+                            int report_ret = read(data->fdFromWorkers, &report, sizeof(WorkerReport));
+                            myassert(report_ret == sizeof(WorkerReport), "error: read from workers failed");
+
+                            // Si un nouveau premier est trouvé, on met à jour les stats
+                            if (report.result == WORKER_MSG_PRIME) {
+                                data->count++;
+                                if (report.number > data->maxPrime) {
+                                    data->maxPrime = report.number;
+                                }
+                            }
+
+                            // Si c'est le rapport pour le nombre 'n' qu'on vient d'envoyer
+                            if (report.number == n) {
+                                report_for_n_found = true;
+                                // Si c'est le nombre final demandé par le client, on stocke la réponse
+                                if (n == req.number) {
+                                    res.data = (report.result == WORKER_MSG_PRIME) ? 1 : 0;
+                                }
+                            }
+                        }
+                    }
+
+                    // Si le nombre demandé était déjà "connu" du pipeline
+                    if (req.number <= data->maxSent) {
+                        write(data->fdToWorker, &req.number, sizeof(req.number));
+                        bool responseFound = false;
+                        while (!responseFound) {
+                            WorkerReport report;
+                            int report_ret = read(data->fdFromWorkers, &report, sizeof(WorkerReport));
+                            myassert(report_ret == sizeof(WorkerReport), "error: read from workers for known number failed");
+                            if (report.number == req.number) {
+                                responseFound = true;
+                                res.data = (report.result == WORKER_MSG_PRIME) ? 1 : 0;
+                            }
+                        }
+                    }
+
+                    if (req.number > data->maxSent) {
+                        data->maxSent = req.number;
+                    }
+                    break;
+                }
 
                 // - si ORDER_HOW_MANY_PRIME
                 case ORDER_HOW_MANY_PRIME:
                     //       . transmettre la réponse au client (le plus simple est que cette
                     //         information soit stockée en local dans le master)
+                    res.data = data->count;
                     break;
                 
                 
@@ -108,6 +155,7 @@ void loop(masterData *data) {
                 case ORDER_HIGHEST_PRIME:
                     //       . transmettre la réponse au client (le plus simple est que cette
                     //         information soit stockée en local dans le master)
+                    res.data = data->maxPrime;
                     break;
                 
                 default:
@@ -139,10 +187,10 @@ int main(int argc, char * argv[]) {
     
     masterData myData;
     myData.semId = -1;
-    myData.maxPrime = 0;
-    myData.count = 0;
-    myData.maxSent = 0;
-
+    myData.maxPrime = 2; // Le premier worker est pour 2, donc c'est le plus grand connu
+    myData.count = 1;    // On a déjà trouvé un nombre premier : 2
+    myData.maxSent = 2;
+    
     key_t key = ftok("master.c", 'S');
     myassert(key != -1, "error: ftok for 'key' failed");
 
@@ -156,14 +204,61 @@ int main(int argc, char * argv[]) {
     ret = semctl(myData.semId, 1, SETVAL, 0);
     myassert(ret != -1, "error: semctl for 'sem' (sync) failed");
 
+    mkfifo("client_to_master", 0644);
+    mkfifo("master_to_client", 0644);
+
     // - création des tubes nommés
+    
+    // - création du tube pour envoyer des nombres aux workers
+    int to_workers_pipe[2];
+    ret = pipe(to_workers_pipe);
+    myassert(ret == 0, "error: pipe for 'to_workers_pipe' failed");
+
+    // - création du tube pour recevoir les rapports des workers
+    int from_workers_pipe[2];
+    ret = pipe(from_workers_pipe);
+    myassert(ret == 0, "error: pipe for 'from_workers_pipe' failed");
+
     // - création du premier worker
+    myData.firstWorkerPid = fork();
+    myassert(myData.firstWorkerPid != -1, "error: fork for 'firstWorkerPid' failed");
+
+    if (myData.firstWorkerPid == 0) { // Code de l'enfant (premier worker)
+        // Fermeture des extrémités de tubes inutilisées par l'enfant
+        close(to_workers_pipe[1]);
+        close(from_workers_pipe[0]);
+
+        // Préparation des arguments pour execl
+        char strPrime[16];
+        char strFdIn[16];
+        char strFdToMaster[16];
+        sprintf(strPrime, "%d", 2); // Le premier worker gère le nombre premier 2
+        sprintf(strFdIn, "%d", to_workers_pipe[0]);
+        sprintf(strFdToMaster, "%d", from_workers_pipe[1]);
+
+        // Remplacement du processus enfant par le programme worker
+        execl("./worker", "worker", strPrime, strFdIn, strFdToMaster, NULL);
+        perror("error: execl for 'worker' failed"); // Ne doit jamais être atteint
+        exit(EXIT_FAILURE);
+    } else { // Code du parent (master)
+        // Fermeture des extrémités de tubes inutilisées par le parent
+        close(to_workers_pipe[0]);
+        close(from_workers_pipe[1]);
+
+        // Stockage des descripteurs de fichiers utiles
+        myData.fdToWorker = to_workers_pipe[1];
+        myData.fdFromWorkers = from_workers_pipe[0];
+    }
 
     // boucle infinie
     loop(&myData);
 
     // destruction des tubes nommés, des sémaphores, ...*
     semctl(myData.semId, 0, IPC_RMID);
+    unlink("client_to_master");
+    unlink("master_to_client");
+    close(myData.fdToWorker);
+    close(myData.fdFromWorkers);
 
     return EXIT_SUCCESS; 
 }
