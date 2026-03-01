@@ -13,6 +13,8 @@ L'objectif est de concevoir une application multitâche capable de répartir une
 
 Le projet met en œuvre les mécanismes bas niveau de communication inter-processus (IPC).
 
+Il a été réalisé en duo avec un camarade : Antoine GIRET (je n'ai pas son lien GitHub).
+
 ---
 
 ## 🏗️ Architecture Technique
